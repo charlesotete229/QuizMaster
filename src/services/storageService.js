@@ -75,6 +75,40 @@ export const storageService = {
   },
 
   /**
+   * Récupère l'ensemble des identifiants de questions posées dans les sessions récentes.
+   * Permet à l'algorithme de tirage d'exclure en priorité les questions récemment vues.
+   * @param {string} [categoryId] Optionnel : filtrer par catégorie
+   * @param {number} [maxSessions=4] Nombre de sessions récentes à analyser
+   * @returns {Set<string>} Ensemble des IDs de questions récemment vues
+   */
+  getRecentlySeenQuestionIds(categoryId = null, maxSessions = 4) {
+    try {
+      const results = this.getQuizResults();
+      const filtered = categoryId
+        ? results.filter(r => r.categoryId === categoryId)
+        : results;
+
+      const recentResults = filtered.slice(0, maxSessions);
+      const seenIds = new Set();
+
+      recentResults.forEach(res => {
+        if (Array.isArray(res.questions) && res.questions.length > 0) {
+          res.questions.forEach(q => {
+            if (q && q.id) seenIds.add(q.id);
+          });
+        } else if (res.userAnswers && typeof res.userAnswers === 'object') {
+          Object.keys(res.userAnswers).forEach(qId => seenIds.add(qId));
+        }
+      });
+
+      return seenIds;
+    } catch (error) {
+      console.error('Erreur getRecentlySeenQuestionIds:', error);
+      return new Set();
+    }
+  },
+
+  /**
    * Supprime un résultat par son identifiant
    * @param {string} resultId
    * @returns {boolean} Succès de la suppression

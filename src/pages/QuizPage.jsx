@@ -37,10 +37,11 @@ export const QuizPage = () => {
 
   const timerRef = useRef(null);
 
-  // Génération d'une nouvelle épreuve aléatoire à chaque lancement ou changement de quiz
+  // Génération d'une nouvelle épreuve aléatoire anti-répétition à chaque lancement ou changement de quiz
   useEffect(() => {
     if (quiz) {
-      const randomized = buildRandomizedQuiz(quiz, QUESTIONS);
+      const recentlySeen = storageService.getRecentlySeenQuestionIds(quiz.categoryId, 1);
+      const randomized = buildRandomizedQuiz(quiz, QUESTIONS, recentlySeen);
       setQuestions(randomized);
       setCurrentQuestionIndex(0);
       setSelectedAnswers({});

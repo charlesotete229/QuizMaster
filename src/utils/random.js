@@ -57,56 +57,64 @@ export const shuffleQuestionOptions = (question) => {
 };
 
 /**
- * Génère une épreuve de quiz unique et aléatoire :
- * 1. Sélectionne le vivier de questions disponibles (par quiz ou catégorie/difficulté).
- * 2. Pioche aléatoirement le nombre exact de questions requis (ex: 5 pour facile, 10 pour moyen, 20 pour difficile).
- * 3. Mélange les 4 propositions de chaque question pour éviter tout apprentissage de position.
+ * Génère une épreuve de quiz unique, aléatoire et à rotation intelligente :
+ * 1. Détermine le vivier de questions de la catégorie et du niveau demandé.
+ * 2. Partitionne le vivier en deux groupes :
+ *    - Questions fraîches (non vues lors des dernières sessions)
+ *    - Questions déjà vues récemment
+ * 3. Pioche en priorité absolue dans les questions fraîches pour éviter toute répétition.
+ *    Si le vivier frais est épuisé, complète avec les questions les plus anciennes.
+ * 4. Mélange les 4 propositions de chaque question pour une expérience inédite.
  * 
  * @param {Object} quiz Définition du quiz
- * @param {Array} allAvailableQuestions Vivier de questions
+ * @param {Array} allAvailableQuestions Vivier global de questions
+ * @param {Set|Array} [recentlySeenIds] Identifiants des questions vues récemment
  * @returns {Array} Liste des questions aléatoires et mélangées pour la session
  */
-export const buildRandomizedQuiz = (quiz, allAvailableQuestions = []) => {
+export const buildRandomizedQuiz = (quiz, allAvailableQuestions = [], recentlySeenIds = new Set()) => {
   if (!allAvailableQuestions || allAvailableQuestions.length === 0) return [];
 
-  // Filtrer par quizId ou par categoryId
-  let pool = allAvailableQuestions.filter(q => q.quizId === quiz.id);
+  const seenSet = recentlySeenIds instanceof Set ? recentlySeenIds : new Set(recentlySeenIds || []);
 
-  // Si le vivier spécifique est inférieur au nombre demandé, élargir à la catégorie et difficulté
-  if (pool.length < quiz.questionCount) {
-    const categoryPool = allAvailableQuestions.filter(q =>
-      q.categoryId === quiz.categoryId &&
-      (!q.difficulty || q.difficulty === quiz.difficulty)
-    );
-    // Fusionner sans doublons d'ID
-    const seenIds = new Set(pool.map(q => q.id));
-    categoryPool.forEach(q => {
-      if (!seenIds.has(q.id)) {
-        pool.push(q);
-        seenIds.add(q.id);
-      }
-    });
+  // Ne jamais compléter avec des questions d’un autre niveau.
+  const pool = allAvailableQuestions.filter(q =>
+    q.categoryId === quiz.categoryId && q.difficulty === quiz.difficulty
+  );
 
-    // Si toujours insuffisant, prendre l'ensemble de la catégorie
-    if (pool.length < quiz.questionCount) {
-      allAvailableQuestions
-        .filter(q => q.categoryId === quiz.categoryId)
-        .forEach(q => {
-          if (!seenIds.has(q.id)) {
-            pool.push(q);
-            seenIds.add(q.id);
-          }
-        });
+  // 2. Partitionner entre questions fraîches (inédites) et déjà vues récemment
+  const freshQuestions = [];
+  const seenQuestions = [];
+
+  pool.forEach(q => {
+    if (seenSet.has(q.id)) {
+      seenQuestions.push(q);
+    } else {
+      freshQuestions.push(q);
     }
+  });
+
+  // Mélanger chaque sous-groupe indépendamment
+  const shuffledFresh = shuffleArray(freshQuestions);
+  const shuffledSeen = shuffleArray(seenQuestions);
+
+  // 3. Sélection prioritaire des questions fraîches
+  const neededCount = Math.min(quiz.questionCount || 5, pool.length);
+  let pickedQuestions = [];
+
+  if (shuffledFresh.length >= neededCount) {
+    // Vivier frais suffisant : 100% de questions inédites !
+    pickedQuestions = shuffledFresh.slice(0, neededCount);
+  } else {
+    // Si le vivier frais est inférieur au besoin : prendre toutes les fraîches + compléter avec les vues
+    pickedQuestions = [
+      ...shuffledFresh,
+      ...shuffledSeen.slice(0, neededCount - shuffledFresh.length)
+    ];
   }
 
-  // Mélanger le pool de questions
-  const shuffledPool = shuffleArray(pool);
+  // 4. Mélanger l'ordre d'apparition final des questions
+  const finalOrderedQuestions = shuffleArray(pickedQuestions);
 
-  // Prendre exactement le nombre de questions imposé
-  const selectedCount = Math.min(quiz.questionCount || 5, shuffledPool.length);
-  const pickedQuestions = shuffledPool.slice(0, selectedCount);
-
-  // Mélanger les 4 propositions de chaque question sélectionnée
-  return pickedQuestions.map(q => shuffleQuestionOptions(q));
+  // 5. Mélanger les 4 propositions de chaque question
+  return finalOrderedQuestions.map(q => shuffleQuestionOptions(q));
 };
